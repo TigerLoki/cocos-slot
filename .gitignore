@@ -5,9 +5,9 @@
 library/
 temp/
 local/
-build/
+
 profiles/
-native
+
 .creator
 #//////////////////////////
 # NPM
