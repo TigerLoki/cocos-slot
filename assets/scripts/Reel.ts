@@ -1,19 +1,21 @@
 import { _decorator, Component, Prefab, instantiate } from 'cc';
 import { SymbolItem } from './SymbolItem';
+import { SymbolCache } from './SymbolCache';
 
 const { ccclass, property } = _decorator;
-
-const SYM_DISTANCE = 180;
-const REEL_MAX_SPEED = 28;
-const REEL_ACCELERATION = 24;
-const REEL_BACKWARDS_ACCELERATION = 60;
-const SPIN_QUEUE_LENGTH = 8;
 
 type REEL_STATE = 'idle' | 'waiting' | 'spinning' | 'roll-back';
 
 @ccclass('Reel')
 export class Reel extends Component {
     @property(Prefab) symbolPrefab: Prefab = null;
+
+    @property symbolDistance: number = 180;
+    @property maxSpeed: number = 28;
+    @property acceleration: number = 24;
+    @property backwardsAcceleration: number = 60;
+    @property queueLength: number = 8;
+    @property startUpSpeed: number = 5;
 
     private items: SymbolItem[] = [];
     private yShift = 0;
@@ -36,7 +38,7 @@ export class Reel extends Component {
 
     private randomizeSymbols() {
         for (const item of this.items) {
-            item.setSymbolId(Math.floor(Math.random() * 8));
+            item.setSymbolId(Math.floor(Math.random() * SymbolCache.getTotalCount()));
         }
     }
 
@@ -44,15 +46,15 @@ export class Reel extends Component {
         return new Promise((resolve) => {
             this.resolveSpinStop = resolve;
             this.state = 'waiting';
-            this.goBackward = 5;
+            this.goBackward = this.startUpSpeed;
             this.goForward = 0;
             this.delay = delay;
             this.yShift = 0;
-
+            const total = SymbolCache.getTotalCount();
             this.queue = [
-                ...Array.from({ length: SPIN_QUEUE_LENGTH }, () => Math.floor(Math.random() * 8)),
+                ...Array.from({ length: this.queueLength }, () => Math.floor(Math.random() * total)),
                 ...target,
-                Math.floor(Math.random() * 8),
+                Math.floor(Math.random() * total),
             ];
         });
     }
@@ -68,7 +70,7 @@ export class Reel extends Component {
 
     private applyPositions() {
         for (let i = 0; i < 4; i++) {
-            this.items[i].node.y = i * SYM_DISTANCE - SYM_DISTANCE * 2 + this.yShift;
+            this.items[i].node.y = (i - 2) * this.symbolDistance + this.yShift;
         }
     }
 
@@ -78,16 +80,17 @@ export class Reel extends Component {
     }
 
     private updateSpinning(dt: number) {
-        if (this.yShift > SYM_DISTANCE) {
-            this.yShift -= SYM_DISTANCE;
-            const nextId = this.queue.length > 0 ? this.queue.shift()! : Math.floor(Math.random() * 8);
+        if (this.yShift > this.symbolDistance) {
+            this.yShift -= this.symbolDistance;
+            const total = SymbolCache.getTotalCount();
+            const nextId = this.queue.length > 0 ? this.queue.shift()! : Math.floor(Math.random() * total);
             const bottom = this.items.pop()!;
             bottom.setSymbolId(nextId);
             this.items.unshift(bottom);
         }
 
-        const valueChange = dt * REEL_ACCELERATION;
-        this.goForward = Math.min(this.goForward + valueChange, REEL_MAX_SPEED);
+        const valueChange = dt * this.acceleration;
+        this.goForward = Math.min(this.goForward + valueChange, this.maxSpeed);
         this.goBackward = Math.max(this.goBackward - valueChange, 0);
         this.yShift += this.goForward - this.goBackward;
 
@@ -98,9 +101,9 @@ export class Reel extends Component {
     }
 
     private updateRollBack(dt: number) {
-        const valueChange = dt * REEL_BACKWARDS_ACCELERATION;
+        const valueChange = dt * this.backwardsAcceleration;
         this.goBackward = 0;
-        this.goForward = Math.max(this.goForward - valueChange, -REEL_MAX_SPEED);
+        this.goForward = Math.max(this.goForward - valueChange, -this.maxSpeed);
 
         if (this.yShift < 0) {
             this.yShift = 0;
@@ -113,7 +116,11 @@ export class Reel extends Component {
     }
 
     public highlightIndices(indices: number[]) {
-        indices.forEach(i => this.items[i]?.showWinFrame(true));
+        indices.forEach(i => {
+            if (i >= 0 && i < this.items.length) {
+                this.items[i].showWinFrame(true);
+            }
+        });
     }
 
     public clearWinFrames() {
